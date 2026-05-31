@@ -1,3 +1,10 @@
+# Dati runtime DuoPaccotti (generati in dev nella root del progetto)
+duopaccotti.db
+catalogs.json
+app_settings.json
+gui_preferences.json
+category_hints.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

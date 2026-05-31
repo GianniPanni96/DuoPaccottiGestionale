@@ -1,0 +1,9 @@
+# Runtime
+PySide6==6.11.1
+pdfplumber==0.11.9
+pycryptodome==3.23.0
+python-dateutil==2.9.0.post0
+matplotlib==3.10.9
+
+# Build
+pyinstaller
