@@ -2,6 +2,7 @@ from ConfigManagers.app_settings_manager import AppSettingsManager
 from ConfigManagers.catalogs_manager import CatalogsManager
 from ConfigManagers.category_hints_manager import CategoryHintsManager
 from ConfigManagers.gui_preferences_manager import GuiPreferencesManager
+from ConfigManagers.operation_labels_manager import OperationLabelsManager
 
 
 class ConfigManager:
@@ -12,12 +13,14 @@ class ConfigManager:
         self.catalogs_manager = CatalogsManager()
         self.category_hints_manager = CategoryHintsManager()
         self.gui_preferences_manager = GuiPreferencesManager()
+        self.operation_labels_manager = OperationLabelsManager()
 
     def ensure_all_exist(self):
         self.app_settings_manager.ensure_exists()
         self.catalogs_manager.ensure_exists()
         self.category_hints_manager.ensure_exists()
         self.gui_preferences_manager.ensure_exists()
+        self.operation_labels_manager.ensure_exists()
 
     def load_config(self) -> dict:
         catalogs = self.catalogs_manager.load()

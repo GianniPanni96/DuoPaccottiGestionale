@@ -121,7 +121,7 @@ class QTExpenseDetailView(QWidget):
         title = QLabel("Condivisione e rimborsi")
         f = title.font()
         f.setBold(True)
-        f.setPointSize(12)
+        f.setPointSize(14)
         title.setFont(f)
         body.addWidget(title)
 

@@ -46,7 +46,7 @@ class QTAdminCreateDialog(QDialog):
         title = QLabel("Amministratore di sistema")
         f = title.font()
         f.setBold(True)
-        f.setPointSize(14)
+        f.setPointSize(16)
         title.setFont(f)
         title.setAlignment(Qt.AlignCenter)
         root.addWidget(title)

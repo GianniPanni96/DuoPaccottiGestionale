@@ -79,8 +79,9 @@ _INTESA_INCOME_MAP = (
 class BankStatementParser(BasePdfParser):
     BANK_NAME = "IntesaSanpaolo"
 
-    def __init__(self, category_hints_manager=None):
+    def __init__(self, category_hints_manager=None, operation_labels_manager=None):
         self.category_hints_manager = category_hints_manager
+        self.operation_labels_manager = operation_labels_manager
 
     def parse(self, pdf_path: str) -> list:
         import pdfplumber
@@ -171,27 +172,29 @@ class BankStatementParser(BasePdfParser):
 
         date = self._iso_date(anchor["date"])
         ordered_rows = sorted(rows, key=lambda r: r["top"])
-        description = " ".join(t for r in ordered_rows for t in r["op"]).strip()
+        operation = " ".join(t for r in ordered_rows for t in r["op"]).strip()
         category_text = " ".join(t for r in ordered_rows for t in r["cat"]).strip()
-        if not description:
-            description = "Movimento bancario"
+        if not operation:
+            operation = "Movimento bancario"
 
         # Segno: negativo => uscita (spesa); positivo => entrata.
         if amount < 0:
             kind = "expense"
-            category = self._map_category(category_text, description)
+            category, description = self._resolve_expense(operation, category_text)
         else:
             kind = "income"
             category = self._map_income_category(category_text)
+            description = ""
 
         return ParsedMovement(
             date=date,
             amount=round(abs(amount), 2),
             description=description,
-            merchant="",
+            merchant=operation,
             suggested_category=category,
             kind=kind,
-            raw_text=f"{date} | {description} | {category_text} | {amount}",
+            raw_text=f"{date} | {operation} | {category_text} | {amount}",
+            operation=operation,
         )
 
     @staticmethod
@@ -203,14 +206,19 @@ class BankStatementParser(BasePdfParser):
         day, month, year = match.group(1), match.group(2), match.group(3)
         return f"{year}-{month}-{day}"
 
-    def _map_category(self, category_text: str, description: str) -> str:
-        lowered = (category_text or "").lower()
-        for keyword, key in _INTESA_CATEGORY_MAP:
-            if keyword in lowered:
-                return key
-        if self.category_hints_manager is not None:
-            return self.category_hints_manager.suggest_category(description, fallback="ALTRO")
-        return "ALTRO"
+    def _resolve_expense(self, operation: str, category_text: str) -> tuple[str, str]:
+        """Restituisce (category_key, description) per una uscita.
+
+        Priorità:
+        1. operation_labels_manager (operazione già nota dall'utente)
+        2. Se non trovata → categoria vuota, descrizione vuota
+           (l'utente le compila nel dialog di preview).
+        """
+        if self.operation_labels_manager is not None:
+            entry = self.operation_labels_manager.get_entry(operation)
+            if entry:
+                return entry.get("category", ""), entry.get("description", "")
+        return "", ""
 
     @staticmethod
     def _map_income_category(category_text: str) -> str:

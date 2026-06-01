@@ -14,6 +14,7 @@ class ParsedMovement:
     kind: str = "expense"           # "expense" | "income"
     raw_text: str = ""
     include: bool = True            # selezionato per il salvataggio
+    operation: str = ""             # testo OPERAZIONE grezzo dal PDF (chiave per operation_labels.json)
 
     def to_expense_data(self, user_id: int, source: str) -> dict:
         from Gestionale_Enums import DBExpensesColumns

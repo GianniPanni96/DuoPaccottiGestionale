@@ -31,7 +31,7 @@ class QTRecoveryCodeShowDialog(QDialog):
         title = QLabel("Conserva questo codice di recupero")
         f = title.font()
         f.setBold(True)
-        f.setPointSize(13)
+        f.setPointSize(15)
         title.setFont(f)
         root.addWidget(title)
 
@@ -47,7 +47,7 @@ class QTRecoveryCodeShowDialog(QDialog):
         self.code_field = QLineEdit(self.recovery_code)
         self.code_field.setReadOnly(True)
         f2 = self.code_field.font()
-        f2.setPointSize(14)
+        f2.setPointSize(16)
         f2.setBold(True)
         self.code_field.setFont(f2)
         self.code_field.setAlignment(Qt.AlignCenter)

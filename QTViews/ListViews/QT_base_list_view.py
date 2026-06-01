@@ -91,7 +91,7 @@ class QTBaseListView(QWidget):
             value = QLabel("0")
             value.setAlignment(Qt.AlignCenter)
             f = value.font()
-            f.setPointSize(12)
+            f.setPointSize(14)
             value.setFont(f)
             box.addWidget(title)
             box.addWidget(value)

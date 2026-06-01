@@ -55,7 +55,7 @@ class QTOnboardingDialog(QDialog):
         title = QLabel("Benvenuto in DuoPaccotti")
         f = title.font()
         f.setBold(True)
-        f.setPointSize(15)
+        f.setPointSize(17)
         title.setFont(f)
         title.setAlignment(Qt.AlignCenter)
         root.addWidget(title)

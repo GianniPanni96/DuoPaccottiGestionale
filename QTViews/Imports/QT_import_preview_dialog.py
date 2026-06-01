@@ -151,9 +151,12 @@ class QTImportPreviewDialog(QDialog):
 
             combo = QComboBox()
             categories = self._income_categories if is_income else self._expense_categories
+            # Placeholder vuoto per spese senza categoria suggerita
+            if not is_income and not mv.suggested_category:
+                combo.addItem("— seleziona —", "")
             for key, label in categories:
                 combo.addItem(label, key)
-            ci = combo.findData(mv.suggested_category)
+            ci = combo.findData(mv.suggested_category) if mv.suggested_category else 0
             combo.setCurrentIndex(ci if ci >= 0 else 0)
             self.table.setCellWidget(r, self.COL_CAT, combo)
             self._category_combos.append(combo)
@@ -237,6 +240,9 @@ class QTImportPreviewDialog(QDialog):
     def _save(self):
         owner = self.user_combo.currentData()
         expenses, incomes = [], []
+        # Per ogni riga salvata: (row_index, operation, category, description)
+        # usato per aggiornare operation_labels dopo il salvataggio.
+        op_label_updates: list[tuple[str, str, str]] = []
 
         for r in range(self.table.rowCount()):
             check = self._check_boxes[r]
@@ -256,7 +262,10 @@ class QTImportPreviewDialog(QDialog):
                 QMessageBox.warning(self, "Validazione", f"Riga {r + 1}: importo non valido (es. 49.90).")
                 return
 
-            category = self._category_combos[r].currentData()
+            category = self._category_combos[r].currentData() or ""
+            if not category:
+                QMessageBox.warning(self, "Validazione", f"Riga {r + 1}: seleziona una categoria.")
+                return
             is_income = self.movements[r].kind == "income"
 
             if is_income:
@@ -287,6 +296,10 @@ class QTImportPreviewDialog(QDialog):
                     data[E.ADVANCED_BY_USER_ID.value] = cfg["advancer"]
                     data["_shares"] = cfg["shares"]
                 expenses.append(data)
+                # Registra la coppia operazione→(categoria, descrizione) per l'aggiornamento
+                op = self.movements[r].operation
+                if op:
+                    op_label_updates.append((op, category, description))
 
         if not expenses and not incomes:
             QMessageBox.information(self, "Import", "Nessun movimento selezionato.")
@@ -301,6 +314,13 @@ class QTImportPreviewDialog(QDialog):
             n_ok, errs = self.income_controller.save_parsed_incomes(incomes)
             self.saved_incomes = n_ok
             errors += errs
+
+        # Aggiorna operation_labels solo se almeno una spesa è stata salvata
+        if self.saved_expenses > 0:
+            mgr = getattr(self.app_context, "operation_labels_manager", None)
+            if mgr is not None:
+                for op, cat, desc in op_label_updates:
+                    mgr.set_entry(op, cat, desc)
 
         summary = f"Salvate {self.saved_expenses} spese e {self.saved_incomes} entrate."
         if errors:

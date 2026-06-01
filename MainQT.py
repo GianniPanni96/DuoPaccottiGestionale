@@ -84,6 +84,9 @@ def main():
     from QTViews.QT_palette_Manager import QTPaletteManager
 
     qt_app = QApplication.instance() or QApplication(sys.argv)
+    _f = qt_app.font()
+    _f.setPointSize(_f.pointSize() + 2)
+    qt_app.setFont(_f)
     QTPaletteManager.install(qt_app)
 
     if not _ensure_admin_exists(app_context):

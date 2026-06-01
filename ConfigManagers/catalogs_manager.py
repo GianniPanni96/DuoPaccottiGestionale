@@ -1,12 +1,28 @@
+import json
+
 from ConfigManagers.base_json_manager import BaseJsonConfigManager
 from ConfigManagers.defaults import CATALOG_ADD_TRIGGERS, CATALOGS_DEFAULT
 
 
 class CatalogsManager(BaseJsonConfigManager):
-    """Categorie di spese ed entrate, editabili dal menu 'Categorie'."""
+    """Categorie di spese ed entrate, editabili dal menu 'Categorie'.
+
+    Override di load/save per NON fare merge con i default: le categorie
+    sono interamente gestite dall'utente, il merge re-inserirebbe voci
+    cancellate."""
 
     file_name = "catalogs.json"
     default_data = CATALOGS_DEFAULT
+
+    def load(self):
+        self.ensure_exists()
+        with open(self.file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def save(self, data):
+        self.file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
 
     def get_section(self, section_name: str) -> dict:
         return self.load().get(section_name, {})

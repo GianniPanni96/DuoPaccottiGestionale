@@ -151,7 +151,7 @@ class QTMainWindow(QMainWindow):
         layout = QVBoxLayout(page)
         label = QLabel(f"Tab «{name}»")
         label.setAlignment(Qt.AlignCenter)
-        label.setStyleSheet("color: palette(mid); font-size: 16pt;")
+        label.setStyleSheet("color: palette(mid); font-size: 18pt;")
         sub_label = QLabel(sub)
         sub_label.setAlignment(Qt.AlignCenter)
         sub_label.setStyleSheet("color: palette(mid);")

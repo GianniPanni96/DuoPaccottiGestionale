@@ -42,7 +42,7 @@ class QTUserCard(QFrame):
         )
         f = name.font()
         f.setBold(True)
-        f.setPointSize(12)
+        f.setPointSize(14)
         name.setFont(f)
         info.addWidget(name)
 
@@ -54,7 +54,7 @@ class QTUserCard(QFrame):
         status = self.user.get(DBUsersColumns.STATUS.value, UserStatus.ATTIVO.value)
         has_password = bool(self.user.get(DBUsersColumns.PASSWORD_LOGIN.value))
         badge = QLabel(f"{status}{'' if has_password else ' · senza password'}")
-        badge.setStyleSheet("color: palette(mid); font-size: 9pt;")
+        badge.setStyleSheet("color: palette(mid); font-size: 11pt;")
         info.addWidget(badge)
 
         info.addStretch(1)
@@ -80,7 +80,7 @@ class QTUserCard(QFrame):
             avatar.setText(initials)
             avatar.setStyleSheet(
                 "background-color: palette(highlight); color: palette(highlighted-text);"
-                " border-radius: 28px; font-size: 18pt; font-weight: bold;"
+                " border-radius: 28px; font-size: 20pt; font-weight: bold;"
             )
         return avatar
 

@@ -38,7 +38,7 @@ class QTUsersView(QWidget):
         top = QHBoxLayout()
         title = QLabel("Utenti del nucleo")
         f = title.font()
-        f.setPointSize(14)
+        f.setPointSize(16)
         f.setBold(True)
         title.setFont(f)
         top.addWidget(title)

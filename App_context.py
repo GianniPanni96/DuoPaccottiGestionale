@@ -40,6 +40,7 @@ class AppContext:
         self.catalogs_manager = config_manager.catalogs_manager
         self.category_hints_manager = config_manager.category_hints_manager
         self.gui_preferences_manager = config_manager.gui_preferences_manager
+        self.operation_labels_manager = config_manager.operation_labels_manager
 
         # Model + sessione.
         self.db_model = DatabaseModel(db_path)
@@ -98,5 +99,7 @@ class AppContext:
         self.admin_controller = AdminController(self.db_model, self.admin_query_service)
 
         # Parser PDF.
-        self.bank_parser = BankStatementParser(self.category_hints_manager)
+        self.bank_parser = BankStatementParser(
+            self.category_hints_manager, self.operation_labels_manager
+        )
         self.esselunga_parser = EsselungaReceiptParser(self.category_hints_manager)
