@@ -65,7 +65,11 @@ class FlowLayout(QLayout):
 
         for item in self._items:
             widget = item.widget()
-            if widget is not None and not widget.isVisible():
+            # Salta solo i widget esplicitamente nascosti (isHidden), non
+            # quelli semplicemente non ancora mostrati: una card appena
+            # creata ha isVisible()==False finche' il parent non e' visibile,
+            # e usare isVisible() qui le faceva accatastare tutte in (0,0).
+            if widget is not None and widget.isHidden():
                 continue
             space_x = spacing
             space_y = spacing

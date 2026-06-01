@@ -34,6 +34,20 @@ class AppSettingsManager(BaseJsonConfigManager):
     def set_default(self, key: str, value: str):
         self._set_value("defaults", key, value)
 
+    # --- rimborsi ---
+
+    REFUND_WINDOWS = ("SETTIMANALE", "MENSILE", "TRIMESTRALE", "ANNUALE")
+
+    def get_refund_window(self) -> str:
+        value = self._get_value("refunds", "window", "MENSILE").upper()
+        return value if value in self.REFUND_WINDOWS else "MENSILE"
+
+    def set_refund_window(self, window: str):
+        window = (window or "").upper()
+        if window not in self.REFUND_WINDOWS:
+            window = "MENSILE"
+        self._set_value("refunds", "window", window)
+
     # --- helpers ---
 
     def _get_value(self, section: str, key: str, fallback: str) -> str:

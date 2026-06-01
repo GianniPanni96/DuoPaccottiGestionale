@@ -7,15 +7,21 @@ dell'insert.
 
 from datetime import datetime
 
+from Event_bus import DATA_CHANGED
 from Gestionale_Enums import DBUsersColumns, UserStatus, Visibility
 from Utils.Controller_utils import ControllerUtils
 from Utils.Validation_utils import ValidationUtils
 
 
 class UserController:
-    def __init__(self, db_model, users_query_service):
+    def __init__(self, db_model, users_query_service, event_bus=None):
         self.db_model = db_model
         self.users_query_service = users_query_service
+        self.event_bus = event_bus
+
+    def _notify(self):
+        if self.event_bus is not None:
+            self.event_bus.publish(DATA_CHANGED, {"domain": "users"})
 
     def save_user(self, user_data: dict):
         """Crea un utente. Returns (ok, msg, info{recovery_code?})."""
@@ -58,6 +64,7 @@ class UserController:
 
         try:
             user_id = self.db_model.add_user(**record)
+            self._notify()
             return True, "Utente creato con successo.", {**info, "user_id": user_id}
         except Exception as exc:
             return False, f"Errore durante la creazione dell'utente: {exc}", None
@@ -67,6 +74,7 @@ class UserController:
             updates = dict(updates)
             updates[DBUsersColumns.UPDATED_AT.value] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.db_model.update_user(user_id, **updates)
+            self._notify()
             return True, "Utente aggiornato."
         except Exception as exc:
             return False, f"Errore durante l'aggiornamento: {exc}"
@@ -74,6 +82,7 @@ class UserController:
     def delete_user(self, user_id: int):
         try:
             self.db_model.remove_user(user_id)
+            self._notify()
             return True, "Utente eliminato."
         except Exception as exc:
             return False, f"Errore durante l'eliminazione: {exc}"

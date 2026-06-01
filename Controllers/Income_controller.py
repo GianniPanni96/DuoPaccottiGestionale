@@ -1,5 +1,6 @@
 """Controller del dominio entrate (semplice: niente condivisione)."""
 
+from Event_bus import DATA_CHANGED
 from Gestionale_Enums import DBIncomesColumns, IncomeSource
 
 
@@ -12,9 +13,14 @@ class IncomeController:
         DBIncomesColumns.DATE.value,
     )
 
-    def __init__(self, db_model, app_settings_manager):
+    def __init__(self, db_model, app_settings_manager, event_bus=None):
         self.db_model = db_model
         self.app_settings_manager = app_settings_manager
+        self.event_bus = event_bus
+
+    def _notify(self):
+        if self.event_bus is not None:
+            self.event_bus.publish(DATA_CHANGED, {"domain": "incomes"})
 
     def save_income(self, income_data: dict):
         """Returns (ok, msg, income_id)."""
@@ -44,6 +50,7 @@ class IncomeController:
 
         try:
             income_id = self.db_model.add_income(**record)
+            self._notify()
             return True, "Entrata salvata con successo!", income_id
         except Exception as exc:
             return False, f"Errore durante il salvataggio: {exc}", None
@@ -62,6 +69,7 @@ class IncomeController:
     def update_income(self, income_id: int, updates: dict):
         try:
             self.db_model.update_income(income_id, **updates)
+            self._notify()
             return True, "Entrata aggiornata."
         except Exception as exc:
             return False, f"Errore durante l'aggiornamento: {exc}"
@@ -69,6 +77,7 @@ class IncomeController:
     def delete_income(self, income_id: int):
         try:
             self.db_model.remove_income(income_id)
+            self._notify()
             return True, "Entrata eliminata."
         except Exception as exc:
             return False, f"Errore durante l'eliminazione: {exc}"

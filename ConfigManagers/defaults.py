@@ -62,6 +62,13 @@ APP_SETTINGS_DEFAULT = {
             "description": "Visibilita' predefinita delle nuove spese/entrate.",
         },
     },
+    "refunds": {
+        "window": {
+            "value": "MENSILE",
+            "description": "Finestra temporale entro cui si calcolano i rimborsi tra utenti "
+                           "(SETTIMANALE, MENSILE, TRIMESTRALE, ANNUALE).",
+        },
+    },
 }
 
 

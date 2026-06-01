@@ -74,21 +74,29 @@ class AppContext:
             self.users_query_service,
         )
 
+        # Bus eventi (creato prima dei controller: vi pubblicano le
+        # mutazioni del DB cosi' le view derivate si auto-aggiornano).
+        self.event_bus = EventBus()
+
         # Controller.
-        self.refund_controller = RefundController(self.db_model, self.expense_shares_query_service)
+        self.refund_controller = RefundController(
+            self.db_model, self.expense_shares_query_service, event_bus=self.event_bus
+        )
         self.expense_controller = ExpenseController(
             self.db_model,
             self.users_query_service,
             self.refund_controller,
             self.app_settings_manager,
+            event_bus=self.event_bus,
         )
-        self.income_controller = IncomeController(self.db_model, self.app_settings_manager)
-        self.user_controller = UserController(self.db_model, self.users_query_service)
+        self.income_controller = IncomeController(
+            self.db_model, self.app_settings_manager, event_bus=self.event_bus
+        )
+        self.user_controller = UserController(
+            self.db_model, self.users_query_service, event_bus=self.event_bus
+        )
         self.admin_controller = AdminController(self.db_model, self.admin_query_service)
 
         # Parser PDF.
         self.bank_parser = BankStatementParser(self.category_hints_manager)
         self.esselunga_parser = EsselungaReceiptParser(self.category_hints_manager)
-
-        # Bus eventi.
-        self.event_bus = EventBus()

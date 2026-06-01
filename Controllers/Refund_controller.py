@@ -7,6 +7,7 @@ partecipanti gli devono la propria quota finche' non e' ``settled``.
 
 from datetime import datetime
 
+from Event_bus import DATA_CHANGED
 from Gestionale_Enums import DBExpenseSharesColumns, DBExpensesColumns
 from Utils.Controller_utils import ControllerUtils
 
@@ -15,9 +16,14 @@ _PCT_TOLERANCE = 0.01
 
 
 class RefundController:
-    def __init__(self, db_model, expense_shares_query_service):
+    def __init__(self, db_model, expense_shares_query_service, event_bus=None):
         self.db_model = db_model
         self.expense_shares_query_service = expense_shares_query_service
+        self.event_bus = event_bus
+
+    def _notify(self):
+        if self.event_bus is not None:
+            self.event_bus.publish(DATA_CHANGED, {"domain": "shares"})
 
     # ------------------------------------------------------------------
     # Creazione/aggiornamento quote
@@ -57,6 +63,7 @@ class RefundController:
                     DBExpenseSharesColumns.IS_SETTLED.value: 0,
                 })
             self.sync_expense_settled_flag(expense_id)
+            self._notify()
             return True, "Quote aggiornate."
         except Exception as exc:
             return False, f"Errore durante l'aggiornamento delle quote: {exc}"
@@ -75,6 +82,7 @@ class RefundController:
                 DBExpenseSharesColumns.SETTLED_AT.value: datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             })
             self._sync_from_share(share_id)
+            self._notify()
             return True, "Quota segnata come saldata."
         except Exception as exc:
             return False, f"Errore: {exc}"
@@ -86,7 +94,33 @@ class RefundController:
                 DBExpenseSharesColumns.SETTLED_AT.value: None,
             })
             self._sync_from_share(share_id)
+            self._notify()
             return True, "Quota segnata come non saldata."
+        except Exception as exc:
+            return False, f"Errore: {exc}"
+
+    def set_shares_settled(self, share_ids, settled: bool):
+        """Aggiorna in blocco lo stato 'saldata' di piu' quote, risincronizza
+        le spese coinvolte una sola volta e notifica un solo evento.
+        Usato dalla tab Rimborsi per 'segna tutti come saldati'."""
+        share_ids = [sid for sid in share_ids if sid is not None]
+        if not share_ids:
+            return True, "Nessuna quota da aggiornare."
+        settled_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S") if settled else None
+        try:
+            expense_ids = set()
+            for share_id in share_ids:
+                self.db_model.update_expense_share(share_id, **{
+                    DBExpenseSharesColumns.IS_SETTLED.value: 1 if settled else 0,
+                    DBExpenseSharesColumns.SETTLED_AT.value: settled_at,
+                })
+                share = self.expense_shares_query_service.retrieve_share_map_by_id(share_id)
+                if share:
+                    expense_ids.add(share[DBExpenseSharesColumns.EXPENSE_ID.value])
+            for expense_id in expense_ids:
+                self.sync_expense_settled_flag(expense_id)
+            self._notify()
+            return True, "Quote aggiornate."
         except Exception as exc:
             return False, f"Errore: {exc}"
 

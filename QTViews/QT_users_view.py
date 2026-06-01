@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QDialog,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -64,6 +65,7 @@ class QTUsersView(QWidget):
     def refresh(self):
         for card in self._cards:
             self._flow.removeWidget(card)
+            card.setParent(None)
             card.deleteLater()
         self._cards = []
 
@@ -78,7 +80,7 @@ class QTUsersView(QWidget):
     def _on_add(self):
         from QTViews.Creators.QT_user_create_view import QTUserCreateView
         dialog = QTUserCreateView(app_context=self.app_context, parent=self)
-        if dialog.exec() != dialog.Accepted:
+        if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         self.refresh()
         if dialog.created_user_id is not None and self.on_open_detail is not None:

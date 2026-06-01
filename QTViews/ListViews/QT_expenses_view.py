@@ -4,7 +4,7 @@ inserimento manuale, import (step 4), eliminazione, apertura dettaglio."""
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QDialog, QMessageBox
 
 from Gestionale_Enums import DBExpensesColumns as E
 from QTViews.CustomWidgets.QT_dict_table_model import Column
@@ -76,7 +76,7 @@ class QTExpensesView(QTBaseListView):
             QMessageBox.warning(self, "Spesa", "Devi essere loggato come utente per aggiungere una spesa.")
             return None
         dialog = QTExpenseCreateView(app_context=self.app_context, owner_user_id=owner_id, parent=self)
-        if dialog.exec() != dialog.Accepted:
+        if dialog.exec() != QDialog.DialogCode.Accepted:
             return None
         return dialog.created_expense_id
 

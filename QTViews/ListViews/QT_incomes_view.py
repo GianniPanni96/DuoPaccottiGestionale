@@ -4,7 +4,7 @@ eliminazione, apertura dettaglio."""
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QDialog, QMessageBox
 
 from Gestionale_Enums import DBIncomesColumns as I
 from QTViews.CustomWidgets.QT_dict_table_model import Column
@@ -66,7 +66,7 @@ class QTIncomesView(QTBaseListView):
             QMessageBox.warning(self, "Entrata", "Devi essere loggato come utente per aggiungere un'entrata.")
             return None
         dialog = QTIncomeCreateView(app_context=self.app_context, owner_user_id=owner_id, parent=self)
-        if dialog.exec() != dialog.Accepted:
+        if dialog.exec() != QDialog.DialogCode.Accepted:
             return None
         return dialog.created_income_id
 

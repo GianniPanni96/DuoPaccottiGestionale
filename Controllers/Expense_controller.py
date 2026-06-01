@@ -8,6 +8,7 @@ quote di condivisione, salvataggio singolo e batch (dai parser PDF).
 - ``_participants``: lista user_id per quote eque (alternativa a _shares).
 """
 
+from Event_bus import DATA_CHANGED
 from Gestionale_Enums import (
     DBExpensesColumns,
     ExpenseSource,
@@ -24,11 +25,17 @@ class ExpenseController:
         DBExpensesColumns.DATE.value,
     )
 
-    def __init__(self, db_model, users_query_service, refund_controller, app_settings_manager):
+    def __init__(self, db_model, users_query_service, refund_controller,
+                 app_settings_manager, event_bus=None):
         self.db_model = db_model
         self.users_query_service = users_query_service
         self.refund_controller = refund_controller
         self.app_settings_manager = app_settings_manager
+        self.event_bus = event_bus
+
+    def _notify(self):
+        if self.event_bus is not None:
+            self.event_bus.publish(DATA_CHANGED, {"domain": "expenses"})
 
     def save_expense(self, expense_data: dict):
         """Returns (ok, msg, expense_id)."""
@@ -77,8 +84,10 @@ class ExpenseController:
             ok, msg = self._create_shares(expense_id, expense_data, total)
             if not ok:
                 # La spesa e' salvata ma senza quote valide: lo segnaliamo.
+                self._notify()
                 return True, f"Spesa salvata, ma quote non impostate: {msg}", expense_id
 
+        self._notify()
         return True, "Spesa salvata con successo!", expense_id
 
     def save_parsed_expenses(self, expenses_data: list):
@@ -96,6 +105,7 @@ class ExpenseController:
     def update_expense(self, expense_id: int, updates: dict):
         try:
             self.db_model.update_expense(expense_id, **updates)
+            self._notify()
             return True, "Spesa aggiornata."
         except Exception as exc:
             return False, f"Errore durante l'aggiornamento: {exc}"
@@ -104,6 +114,7 @@ class ExpenseController:
         try:
             self.db_model.remove_shares_for_expense(expense_id)
             self.db_model.remove_expense(expense_id)
+            self._notify()
             return True, "Spesa eliminata."
         except Exception as exc:
             return False, f"Errore durante l'eliminazione: {exc}"

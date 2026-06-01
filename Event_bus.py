@@ -1,3 +1,10 @@
+# Chiave dell'evento pubblicato dai controller dopo ogni mutazione del DB
+# (creazione/modifica/eliminazione di spese, entrate, quote, utenti). Le view
+# che mostrano dati derivati (es. la tab Analisi) vi si sottoscrivono per
+# auto-aggiornarsi. Coincide con ``ViewUtils.EventBusKeys.DATA_CHANGED.value``.
+DATA_CHANGED = "DATA_CHANGED"
+
+
 class EventBus:
     """Pub/sub minimale per disaccoppiare le view (login, navigazione)."""
 

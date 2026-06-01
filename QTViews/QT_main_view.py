@@ -100,6 +100,7 @@ class QTMainWindow(QMainWindow):
 
         settings = menubar.addMenu("Impostazioni")
         settings.addAction("Nome del nucleo").triggered.connect(self._edit_collective_name)
+        settings.addAction("Finestra rimborsi").triggered.connect(self._edit_refund_window)
         settings.addAction("Default utente").triggered.connect(self._placeholder_action)
 
         self.admin_menu = menubar.addMenu("ADMIN")
@@ -369,6 +370,28 @@ class QTMainWindow(QMainWindow):
         if ok and name.strip():
             self.app_context.app_settings_manager.set_collective_name(name.strip())
             self.setWindowTitle(self._window_title())
+
+    def _edit_refund_window(self):
+        from Utils.Refund_window_utils import WINDOW_LABELS
+
+        settings = self.app_context.app_settings_manager
+        keys = list(settings.REFUND_WINDOWS)
+        labels = [WINDOW_LABELS.get(k, k) for k in keys]
+        current_key = settings.get_refund_window()
+        current_idx = keys.index(current_key) if current_key in keys else 0
+
+        label, ok = QInputDialog.getItem(
+            self,
+            "Finestra rimborsi",
+            "Periodo entro cui calcolare i rimborsi tra utenti:",
+            labels,
+            current_idx,
+            editable=False,
+        )
+        if not ok:
+            return
+        settings.set_refund_window(keys[labels.index(label)])
+        self.analysis_view.reset_refund_window()
 
     def _placeholder_action(self):
         QMessageBox.information(
