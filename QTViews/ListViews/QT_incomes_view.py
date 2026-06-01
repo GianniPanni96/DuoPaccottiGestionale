@@ -35,13 +35,14 @@ class QTIncomesView(QTBaseListView):
         self.income_analyzer_service = app_context.income_analyzer_service
         self.income_controller = app_context.income_controller
         self.session_context = app_context.session_context
-        catalogs = app_context.catalogs_manager.get_section("income_categories")
-        self._category_label_map = dict(catalogs)
+        self._catalogs_manager = app_context.catalogs_manager
+        self._category_label_map = dict(self._catalogs_manager.get_section("income_categories"))
 
     def fetch_items(self, year):
         return self.incomes_query_service.retrieve_incomes_map_list(year=year)
 
     def build_rows(self, items):
+        self._category_label_map = dict(self._catalogs_manager.get_section("income_categories"))
         rows = []
         for raw in items:
             inc = dict(raw)

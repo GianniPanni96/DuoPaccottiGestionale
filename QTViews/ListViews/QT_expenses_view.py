@@ -39,13 +39,16 @@ class QTExpensesView(QTBaseListView):
         self.expense_analyzer_service = app_context.expense_analyzer_service
         self.expense_controller = app_context.expense_controller
         self.session_context = app_context.session_context
-        catalogs = app_context.catalogs_manager.get_section("expense_categories")
-        self._category_label_map = dict(catalogs)
+        self._catalogs_manager = app_context.catalogs_manager
+        self._category_label_map = dict(self._catalogs_manager.get_section("expense_categories"))
 
     def fetch_items(self, year):
         return self.expenses_query_service.retrieve_expenses_map_list(year=year)
 
     def build_rows(self, items):
+        # Rilegge le etichette categoria a ogni reload, cosi' le modifiche dal
+        # menu 'Categorie' sono visibili senza riavviare.
+        self._category_label_map = dict(self._catalogs_manager.get_section("expense_categories"))
         rows = []
         for raw in items:
             e = dict(raw)
@@ -87,16 +90,62 @@ class QTExpensesView(QTBaseListView):
         ]
 
     def _import_bank(self):
-        self._import_placeholder("estratto conto IntesaSanpaolo")
+        from Gestionale_Enums import ExpenseSource
+        from PySide6.QtWidgets import QFileDialog
+        from QTViews.Imports.QT_import_preview_dialog import QTImportPreviewDialog
+
+        owner_id = self._import_owner()
+        if owner_id is None:
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Seleziona la lista movimenti (PDF)", "", "PDF (*.pdf)")
+        if not path:
+            return
+        try:
+            movements = self.app_context.bank_parser.parse(path)
+        except Exception as exc:
+            QMessageBox.critical(self, "Errore di lettura", f"Impossibile leggere il PDF:\n{exc}")
+            return
+        if not movements:
+            QMessageBox.information(self, "Import", "Nessun movimento riconosciuto nel PDF selezionato.")
+            return
+        dialog = QTImportPreviewDialog(
+            app_context=self.app_context, owner_user_id=owner_id, movements=movements,
+            source=ExpenseSource.ESTRATTO_BANCA.value,
+            title="Import estratto conto IntesaSanpaolo", parent=self,
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.saved_count:
+            self._reload_data()
 
     def _import_receipt(self):
-        self._import_placeholder("scontrino Esselunga")
+        from PySide6.QtWidgets import QFileDialog
+        from QTViews.Imports.QT_esselunga_import_dialog import QTEsselungaImportDialog
 
-    def _import_placeholder(self, what):
-        QMessageBox.information(
-            self, "Import",
-            f"L'import da {what} sara' attivo nello step 4 (parser PDF).",
+        owner_id = self._import_owner()
+        if owner_id is None:
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Seleziona lo scontrino Esselunga (PDF)", "", "PDF (*.pdf)")
+        if not path:
+            return
+        try:
+            receipt = self.app_context.esselunga_parser.parse_receipt(path)
+        except Exception as exc:
+            QMessageBox.critical(self, "Errore di lettura", f"Impossibile leggere il PDF:\n{exc}")
+            return
+        if not receipt.items:
+            QMessageBox.information(self, "Import", "Nessun articolo riconosciuto nello scontrino.")
+            return
+        dialog = QTEsselungaImportDialog(
+            app_context=self.app_context, owner_user_id=owner_id, receipt=receipt, parent=self,
         )
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.saved_count:
+            self._reload_data()
+
+    def _import_owner(self):
+        owner_id = self.session_context.current_user_id
+        if owner_id < 0:
+            QMessageBox.warning(self, "Import", "Devi essere loggato come utente per importare spese.")
+            return None
+        return owner_id
 
     def context_menu_actions(self, row):
         expense_id = row.get(E.ID.value)

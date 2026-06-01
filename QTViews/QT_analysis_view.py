@@ -61,7 +61,8 @@ class QTAnalysisView(QWidget):
         self.users_query = app_context.users_query_service
         self.app_settings = app_context.app_settings_manager
         self.refund_controller = app_context.refund_controller
-        self._cat_labels = dict(app_context.catalogs_manager.get_section("expense_categories"))
+        self.catalogs_manager = app_context.catalogs_manager
+        self._cat_labels = dict(self.catalogs_manager.get_section("expense_categories"))
 
         self._refund_offset = 0          # 0 = periodo corrente, <0 = precedenti
         self._refresh_pending = False
@@ -264,6 +265,7 @@ class QTAnalysisView(QWidget):
     # ------------------------------------------------------------------
 
     def refresh(self):
+        self._cat_labels = dict(self.catalogs_manager.get_section("expense_categories"))
         self._refresh_annual()
         self._refresh_monthly()
         self._refresh_average()

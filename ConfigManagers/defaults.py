@@ -9,6 +9,8 @@ from Gestionale_Enums import PaymentMethod, Visibility
 CATALOGS_DEFAULT = {
     "expense_categories": {
         "ALIMENTARI": "Alimentari e Spesa",
+        "CIBO": "Cibo",
+        "CONSUMABILI_CASA": "Consumabili Casa",
         "CASA_BOLLETTE": "Casa e Bollette",
         "TRASPORTI": "Trasporti",
         "SALUTE": "Salute",

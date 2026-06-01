@@ -101,7 +101,7 @@ class QTMainWindow(QMainWindow):
         settings = menubar.addMenu("Impostazioni")
         settings.addAction("Nome del nucleo").triggered.connect(self._edit_collective_name)
         settings.addAction("Finestra rimborsi").triggered.connect(self._edit_refund_window)
-        settings.addAction("Default utente").triggered.connect(self._placeholder_action)
+        settings.addAction("Default utente").triggered.connect(self._edit_defaults)
 
         self.admin_menu = menubar.addMenu("ADMIN")
         self.admin_menu.addAction("Gestione utenti").triggered.connect(
@@ -362,7 +362,15 @@ class QTMainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _open_categories(self):
-        self._placeholder_action()
+        from QTViews.SettingsViews.QT_categories_dialog import QTCategoriesDialog
+        dialog = QTCategoriesDialog(
+            app_context=self.app_context, on_changed=self._refresh_all_views, parent=self
+        )
+        dialog.exec()
+
+    def _edit_defaults(self):
+        from QTViews.SettingsViews.QT_defaults_dialog import QTDefaultsDialog
+        QTDefaultsDialog(app_context=self.app_context, parent=self).exec()
 
     def _edit_collective_name(self):
         current = self.app_context.app_settings_manager.get_collective_name()
@@ -392,8 +400,3 @@ class QTMainWindow(QMainWindow):
             return
         settings.set_refund_window(keys[labels.index(label)])
         self.analysis_view.reset_refund_window()
-
-    def _placeholder_action(self):
-        QMessageBox.information(
-            self, "In arrivo", "Questa funzione sara' disponibile in uno step successivo."
-        )
