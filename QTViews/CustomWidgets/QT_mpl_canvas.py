@@ -1,9 +1,9 @@
 """Canvas matplotlib embeddabili in PySide6 per la tab Analisi.
 
 ``MplCanvas`` e' il canvas generico (un singolo asse) usato per i grafici a
-barre. ``InteractivePieCanvas`` disegna un grafico a torta con legenda e un
-tooltip che compare al passaggio del mouse su una fetta (stesso
-comportamento dei grafici a torta di WillowGestionale).
+barre. ``InteractivePieCanvas`` disegna un grafico a torta con tooltip
+interattivo e supporta l'evidenziazione esterna di una fetta (usata dalla
+view per rispecchiare l'hover sulla tabella riassuntiva).
 
 Lo sfondo delle figure segue la palette dell'app (ruolo ``Window``), cosi'
 i grafici si integrano con il resto dei widget invece di mostrare il bianco
@@ -12,7 +12,7 @@ di default di matplotlib."""
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from PySide6.QtGui import QPalette
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QSizePolicy
 
 from Utils.View_utils import ViewUtils
 
@@ -81,19 +81,43 @@ class MplCanvas(FigureCanvasQTAgg):
 
 
 class InteractivePieCanvas(FigureCanvasQTAgg):
-    """Grafico a torta con legenda e tooltip interattivo.
+    """Grafico a torta/istogramma con tooltip interattivo e highlighting esterno.
 
     Pensato per essere ricreato a ogni refresh: usa ``Figure`` diretta (non
     pyplot), quindi non serve ``plt.close`` — basta rimuoverlo dal layout e
-    chiamarne ``deleteLater``."""
+    chiamarne ``deleteLater``.
+
+    Espone ``highlight_label(index)`` / ``clear_highlight()`` per evidenziare
+    programmaticamente una fetta dall'esterno (es. hover sulla tabella)."""
 
     def __init__(self, parent=None, width=4.0, height=3.4, dpi=100):
         self.figure = Figure(figsize=(width, height), dpi=dpi)
         super().__init__(self.figure)
         self.setParent(parent)
         self._motion_cid = None
+        self._wedges: list = []
+        self._labels: list = []
         bg, _ = palette_colors()
         self.figure.set_facecolor(bg)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    # ------------------------------------------------------------------
+    # API esterna per highlighting da tabella
+    # ------------------------------------------------------------------
+
+    def highlight_label(self, index: int | None):
+        """Evidenzia la fetta ``index``; le altre vengono attenuate.
+        ``None`` ripristina tutte le opacità."""
+        if not self._wedges:
+            return
+        for i, w in enumerate(self._wedges):
+            w.set_alpha(0.20 if (index is not None and i != index) else 1.0)
+        self.draw_idle()
+
+    def clear_highlight(self):
+        self.highlight_label(None)
+
+    # ------------------------------------------------------------------
 
     def draw_empty(self, message):
         bg, fg = palette_colors()
@@ -109,11 +133,17 @@ class InteractivePieCanvas(FigureCanvasQTAgg):
         self.draw()
 
     def draw_pie(self, title, labels, values, value_suffix=" €"):
-        """Disegna la torta. ``labels``/``values`` sono allineati e gia'
-        filtrati dai valori nulli."""
+        """Disegna la torta senza legenda, centrata nel canvas.
+
+        ``labels``/``values`` sono allineati e gia' filtrati dai valori nulli.
+        Salva i wedge in ``self._wedges`` / ``self._labels`` per consentire
+        l'highlighting esterno."""
         if self._motion_cid is not None:
             self.mpl_disconnect(self._motion_cid)
             self._motion_cid = None
+
+        self._wedges = []
+        self._labels = []
 
         bg, fg = palette_colors()
         self.figure.clear()
@@ -137,23 +167,21 @@ class InteractivePieCanvas(FigureCanvasQTAgg):
         )
         for autotext in autotexts:
             autotext.set_color("white")
-            autotext.set_fontsize(8)
+            autotext.set_fontsize(9)
             autotext.set_weight("bold")
 
         ax.axis("equal")
         if title:
-            ax.set_title(title, fontsize=10, fontweight="bold", color=fg)
-        ax.legend(
-            wedges,
-            [ViewUtils.split_string_by_length(label, 22) for label in labels],
-            loc="center left",
-            bbox_to_anchor=(0.98, 0.5),
-            frameon=False,
-            labelcolor=fg,
-            fontsize=8,
-        )
-        self.figure.subplots_adjust(left=0.02, right=0.60, top=0.88, bottom=0.04)
+            ax.set_title(title, fontsize=11, fontweight="bold", color=fg, pad=8)
 
+        # Centra la torta nel canvas — nessuna legenda, margini bilanciati.
+        self.figure.tight_layout(pad=0.6)
+
+        # Salva per highlighting esterno.
+        self._wedges = wedges
+        self._labels = list(labels)
+
+        # Tooltip al passaggio del mouse.
         annotation = ax.annotate(
             "",
             xy=(0, 0),
@@ -201,4 +229,52 @@ class InteractivePieCanvas(FigureCanvasQTAgg):
                 self.draw_idle()
 
         self._motion_cid = self.mpl_connect("motion_notify_event", on_motion)
+        self.draw()
+
+    def draw_bar(self, title, labels, values, value_suffix=" €"):
+        """Istogramma a barre verticali che occupa tutta la larghezza del canvas.
+
+        ``labels``/``values`` allineati e gia' filtrati dai valori nulli."""
+        if self._motion_cid is not None:
+            self.mpl_disconnect(self._motion_cid)
+            self._motion_cid = None
+
+        self._wedges = []
+        self._labels = []
+
+        bg, fg = palette_colors()
+        self.figure.clear()
+        self.figure.set_facecolor(bg)
+        ax = self.figure.add_subplot(111)
+        ax.set_facecolor(bg)
+
+        total = sum(values)
+        if total <= 0 or not labels:
+            self.draw_empty(message="Nessuna spesa")
+            return
+
+        x_pos = list(range(len(labels)))
+        colors = [PIE_COLORS[i % len(PIE_COLORS)] for i in range(len(values))]
+        bars = ax.bar(x_pos, values, color=colors)
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels(
+            [ViewUtils.split_string_by_length(label, 14) for label in labels],
+            fontsize=7, color=fg, rotation=30, ha="right",
+        )
+        ax.tick_params(colors=fg)
+        for spine in ax.spines.values():
+            spine.set_color(fg)
+        ax.set_yticks([])
+
+        for bar, val in zip(bars, values):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                f"{val:.2f}{value_suffix.strip()}",
+                va="bottom", ha="center", color=fg, fontsize=7, fontweight="bold",
+            )
+
+        if title:
+            ax.set_title(title, fontsize=11, fontweight="bold", color=fg)
+        ax.margins(y=0.18)
+        self.figure.tight_layout()
         self.draw()

@@ -13,8 +13,8 @@ from datetime import datetime
 from itertools import groupby
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer
+from PySide6.QtGui import QColor, QFont, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QScrollArea,
+    QStyledItemDelegate,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -46,10 +47,56 @@ _MONTHS = [
 ]
 _YEARS_BACK = 5
 
-# Altezza fissa della striscia dei grafici: la torta resta tonda e non si
-# deforma quando la finestra cambia dimensione; lo spazio verticale extra va
-# alle tabelle sottostanti.
-_CHART_AREA_HEIGHT = 300
+# Altezza minima della striscia dei grafici: la torta resta tonda e leggibile.
+# L'area grafici occupa lo spazio in eccesso (stretch), mentre la tabella
+# riassuntiva sotto si dimensiona sul proprio contenuto e resta ancorata in basso.
+_CHART_MIN_HEIGHT = 280
+
+# Colore del bordo evidenziato per le righe riassuntive dei rimborsi.
+_RECAP_BORDER_COLOR = "#2e7d57"
+
+
+class _TableLeaveFilter(QObject):
+    """Event filter sul viewport di una QTableWidget: chiama ``on_leave``
+    quando il mouse lascia la tabella, cosi' la view puo' cancellare
+    l'highlighting sui pie chart corrispondenti."""
+
+    def __init__(self, on_leave, parent=None):
+        super().__init__(parent)
+        self._on_leave = on_leave
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.Leave:
+            self._on_leave()
+        return False
+
+
+class _RecapBorderDelegate(QStyledItemDelegate):
+    """Disegna un bordo evidenziato attorno alle righe riassuntive (totali)
+    della tabella rimborsi. Le righe da evidenziare sono in ``recap_rows``."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.recap_rows: set[int] = set()
+
+    def paint(self, painter, option, index):
+        super().paint(painter, option, index)
+        if index.row() not in self.recap_rows:
+            return
+        painter.save()
+        pen = QPen(QColor(_RECAP_BORDER_COLOR))
+        pen.setWidth(2)
+        painter.setPen(pen)
+        rect = option.rect
+        # Linee orizzontali (top/bottom) per tutte le celle della riga.
+        painter.drawLine(rect.topLeft(), rect.topRight())
+        painter.drawLine(rect.bottomLeft(), rect.bottomRight())
+        # Bordi verticali solo agli estremi della riga.
+        if index.column() == 0:
+            painter.drawLine(rect.topLeft(), rect.bottomLeft())
+        if index.column() == index.model().columnCount() - 1:
+            painter.drawLine(rect.topRight(), rect.bottomRight())
+        painter.restore()
 
 
 class QTAnalysisView(QWidget):
@@ -66,6 +113,15 @@ class QTAnalysisView(QWidget):
 
         self._refund_offset = 0          # 0 = periodo corrente, <0 = precedenti
         self._refresh_pending = False
+
+        # Canvas attivi per tab: aggiornati a ogni refresh, usati per
+        # l'highlighting sincrono con l'hover sulla tabella.
+        self._annual_canvases:  list[InteractivePieCanvas] = []
+        self._monthly_canvases: list[InteractivePieCanvas] = []
+        self._average_canvases: list[InteractivePieCanvas] = []
+
+        # Event filter keep-alive (evita il GC).
+        self._leave_filters: list = []
 
         self._build_ui()
         self.refresh()
@@ -119,6 +175,58 @@ class QTAnalysisView(QWidget):
         return combo
 
     @staticmethod
+    def _make_chart_toggle(on_changed) -> QComboBox:
+        """Selettore tipo di grafico (torta/istogramma) per un tab."""
+        combo = QComboBox()
+        combo.addItem("Torta", "pie")
+        combo.addItem("Istogramma", "bar")
+        combo.currentIndexChanged.connect(on_changed)
+        return combo
+
+    @staticmethod
+    def _fit_table_to_contents(table: QTableWidget):
+        """Fissa l'altezza della tabella su quella dei suoi contenuti: la
+        tabella si espande in verticale per mostrare tutte le righe senza mai
+        scrollare, occupando solo lo spazio necessario ai figli."""
+        table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        table.resizeRowsToContents()
+        height = table.horizontalHeader().height() + 2 * table.frameWidth()
+        for r in range(table.rowCount()):
+            height += table.rowHeight(r)
+        table.setFixedHeight(height)
+
+    def _wire_table_hover(self, table: QTableWidget, canvases: list):
+        """Abilita il mouse-tracking sulla tabella e collega i segnali per
+        evidenziare le fette dei pie chart al passaggio del mouse sulle righe."""
+        table.setMouseTracking(True)
+        table.viewport().setMouseTracking(True)
+        table.cellEntered.connect(
+            lambda r, _c, t=table, cv=canvases: self._on_table_hover(r, t, cv)
+        )
+        leave_filter = _TableLeaveFilter(lambda cv=canvases: self._clear_pie_highlights(cv), table.viewport())
+        table.viewport().installEventFilter(leave_filter)
+        self._leave_filters.append(leave_filter)
+
+    def _on_table_hover(self, row: int, table: QTableWidget, canvases: list):
+        item = table.item(row, 0)
+        label = item.text().strip() if item else None
+        for canvas in canvases:
+            if label is None or not canvas._labels:
+                canvas.clear_highlight()
+                continue
+            try:
+                idx = canvas._labels.index(label)
+                canvas.highlight_label(idx)
+            except ValueError:
+                canvas.clear_highlight()
+
+    @staticmethod
+    def _clear_pie_highlights(canvases: list):
+        for canvas in canvases:
+            canvas.clear_highlight()
+
+    @staticmethod
     def _style_table(table: QTableWidget):
         """Colonne larghe (riempiono la viewport), sola lettura, righe alte."""
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -153,12 +261,16 @@ class QTAnalysisView(QWidget):
         self.annual_year_combo.currentIndexChanged.connect(self._refresh_annual)
         controls.addWidget(self.annual_year_combo)
         controls.addStretch(1)
+        controls.addWidget(QLabel("Grafico:"))
+        self.annual_chart_combo = self._make_chart_toggle(self._refresh_annual)
+        controls.addWidget(self.annual_chart_combo)
         layout.addLayout(controls)
 
         self.annual_charts_layout = self._build_pies_area(layout)
         self.annual_table = QTableWidget()
         self._style_table(self.annual_table)
-        layout.addWidget(self.annual_table, stretch=1)
+        self._wire_table_hover(self.annual_table, self._annual_canvases)
+        layout.addWidget(self.annual_table, stretch=0)
         return page
 
     def _build_monthly_tab(self) -> QWidget:
@@ -177,12 +289,16 @@ class QTAnalysisView(QWidget):
         self.monthly_year_combo.currentIndexChanged.connect(self._refresh_monthly)
         controls.addWidget(self.monthly_year_combo)
         controls.addStretch(1)
+        controls.addWidget(QLabel("Grafico:"))
+        self.monthly_chart_combo = self._make_chart_toggle(self._refresh_monthly)
+        controls.addWidget(self.monthly_chart_combo)
         layout.addLayout(controls)
 
         self.monthly_charts_layout = self._build_pies_area(layout)
         self.monthly_table = QTableWidget()
         self._style_table(self.monthly_table)
-        layout.addWidget(self.monthly_table, stretch=1)
+        self._wire_table_hover(self.monthly_table, self._monthly_canvases)
+        layout.addWidget(self.monthly_table, stretch=0)
         return page
 
     def _build_average_tab(self) -> QWidget:
@@ -194,6 +310,9 @@ class QTAnalysisView(QWidget):
         self.average_year_combo.currentIndexChanged.connect(self._refresh_average)
         controls.addWidget(self.average_year_combo)
         controls.addStretch(1)
+        controls.addWidget(QLabel("Grafico:"))
+        self.average_chart_combo = self._make_chart_toggle(self._refresh_average)
+        controls.addWidget(self.average_chart_combo)
         layout.addLayout(controls)
         hint = QLabel("Media mensile = totale categoria / mesi trascorsi nell'anno.")
         hint.setStyleSheet("color: palette(mid);")
@@ -202,7 +321,8 @@ class QTAnalysisView(QWidget):
         self.average_charts_layout = self._build_pies_area(layout)
         self.average_table = QTableWidget()
         self._style_table(self.average_table)
-        layout.addWidget(self.average_table, stretch=1)
+        self._wire_table_hover(self.average_table, self._average_canvases)
+        layout.addWidget(self.average_table, stretch=0)
         return page
 
     def _build_refund_tab(self) -> QWidget:
@@ -251,6 +371,8 @@ class QTAnalysisView(QWidget):
 
         self.refund_table = QTableWidget()
         self._style_table(self.refund_table)
+        self.refund_recap_delegate = _RecapBorderDelegate(self.refund_table)
+        self.refund_table.setItemDelegate(self.refund_recap_delegate)
         layout.addWidget(self.refund_table, stretch=1)
 
         self.refund_summary = QLabel("")
@@ -274,7 +396,8 @@ class QTAnalysisView(QWidget):
     def _refresh_annual(self):
         year = self.annual_year_combo.currentData()
         data = self._named_grouped(self.expense_analyzer.annual_by_user_and_category(year=year))
-        self._draw_user_pies(self.annual_charts_layout, data)
+        self._draw_user_charts(self.annual_charts_layout, data,
+                               self.annual_chart_combo.currentData(), self._annual_canvases)
         self._fill_user_category_table(self.annual_table, data)
 
     def _refresh_monthly(self):
@@ -283,14 +406,18 @@ class QTAnalysisView(QWidget):
         data = self._named_grouped(
             self.expense_analyzer.monthly_by_user_and_category(month=month, year=year)
         )
-        self._draw_user_pies(self.monthly_charts_layout, data)
+        self._draw_user_charts(self.monthly_charts_layout, data,
+                               self.monthly_chart_combo.currentData(), self._monthly_canvases)
         self._fill_user_category_table(self.monthly_table, data)
 
     def _refresh_average(self):
         year = self.average_year_combo.currentData()
         raw = self.expense_analyzer.monthly_average_by_category(year=year)
         data = {self._cat_label(k): v for k, v in raw.items()}
-        self._draw_single_pie(self.average_charts_layout, data, f"Media mensile {year}")
+        self._draw_single_chart(
+            self.average_charts_layout, data, f"Media mensile {year}",
+            self.average_chart_combo.currentData(), self._average_canvases,
+        )
         self._fill_single_table(self.average_table, data, "Categoria", "Media mensile")
 
     # ------------------------------------------------------------------
@@ -400,6 +527,7 @@ class QTAnalysisView(QWidget):
         pair_totals = detail["pair_totals"]
         recap_font = QFont()
         recap_font.setBold(True)
+        recap_rows: set[int] = set()
 
         def add_text(r, c, text, align=None):
             item = QTableWidgetItem(text)
@@ -427,6 +555,7 @@ class QTAnalysisView(QWidget):
             tot = pair_totals.get((debtor_id, creditor_id), {"outstanding": 0.0, "settled": 0.0})
             r = table.rowCount()
             table.insertRow(r)
+            recap_rows.add(r)
             table.setSpan(r, 0, 1, 4)
             recap = add_text(
                 r, 0,
@@ -437,6 +566,9 @@ class QTAnalysisView(QWidget):
             amount_item.setFont(recap_font)
             info = add_text(r, 5, f"{tot['settled']:.2f} € saldati")
             info.setForeground(Qt.gray)
+
+        self.refund_recap_delegate.recap_rows = recap_rows
+        table.viewport().update()
 
         header = table.horizontalHeader()
         header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
@@ -457,18 +589,19 @@ class QTAnalysisView(QWidget):
     # ------------------------------------------------------------------
 
     def _build_pies_area(self, layout) -> QHBoxLayout:
-        """Striscia orizzontale ad altezza fissa che ospita le torte; le torte
-        restano tonde e non si stirano al ridimensionarsi della root."""
+        """Striscia orizzontale che ospita i grafici; ha un'altezza minima e
+        occupa lo spazio verticale in eccesso (stretch), lasciando alla tabella
+        sottostante solo lo spazio necessario al suo contenuto."""
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setFixedHeight(_CHART_AREA_HEIGHT)
+        scroll.setMinimumHeight(_CHART_MIN_HEIGHT)
         host = QWidget()
         charts_layout = QHBoxLayout(host)
         charts_layout.setContentsMargins(4, 4, 4, 4)
         charts_layout.setSpacing(12)
         scroll.setWidget(host)
-        layout.addWidget(scroll)
+        layout.addWidget(scroll, stretch=1)
         return charts_layout
 
     @staticmethod
@@ -486,10 +619,12 @@ class QTAnalysisView(QWidget):
         empty.setStyleSheet("color: palette(mid);")
         charts_layout.addWidget(empty, stretch=1)
 
-    def _draw_user_pies(self, charts_layout: QHBoxLayout, data_by_user: dict):
-        """Una torta per utente: la suddivisione delle sue spese per categoria,
-        con legenda e tooltip interattivo."""
+    def _draw_user_charts(self, charts_layout: QHBoxLayout, data_by_user: dict,
+                          mode: str, canvas_store: list):
+        """Un grafico per utente (torta o istogramma) che occupa tutta la
+        larghezza disponibile, suddivisa equamente tra gli utenti."""
         self._clear_layout(charts_layout)
+        canvas_store.clear()
 
         users = [u for u in data_by_user if any(data_by_user[u].values())]
         if not users:
@@ -504,14 +639,19 @@ class QTAnalysisView(QWidget):
                 reverse=True,
             )
             canvas = InteractivePieCanvas()
-            canvas.setMinimumWidth(420)
-            canvas.draw_pie(user, [p[0] for p in pairs], [p[1] for p in pairs])
-            charts_layout.addWidget(canvas)
-        charts_layout.addStretch(1)
+            if mode == "bar":
+                canvas.draw_bar(user, [p[0] for p in pairs], [p[1] for p in pairs])
+            else:
+                canvas.draw_pie(user, [p[0] for p in pairs], [p[1] for p in pairs])
+            canvas_store.append(canvas)
+            charts_layout.addWidget(canvas, stretch=1)
 
-    def _draw_single_pie(self, charts_layout: QHBoxLayout, data: dict, title: str):
-        """Una sola torta (es. media mensile per categoria), centrata."""
+    def _draw_single_chart(self, charts_layout: QHBoxLayout, data: dict,
+                           title: str, mode: str, canvas_store: list):
+        """Un solo grafico centrato che occupa tutta la larghezza disponibile."""
         self._clear_layout(charts_layout)
+        canvas_store.clear()
+
         pairs = sorted(
             ((label, val) for label, val in data.items() if val),
             key=lambda kv: kv[1],
@@ -520,12 +660,14 @@ class QTAnalysisView(QWidget):
         if not pairs:
             self._empty_charts_label(charts_layout)
             return
-        charts_layout.addStretch(1)
+
         canvas = InteractivePieCanvas()
-        canvas.setMinimumWidth(460)
-        canvas.draw_pie(title, [p[0] for p in pairs], [p[1] for p in pairs])
-        charts_layout.addWidget(canvas)
-        charts_layout.addStretch(1)
+        if mode == "bar":
+            canvas.draw_bar(title, [p[0] for p in pairs], [p[1] for p in pairs])
+        else:
+            canvas.draw_pie(title, [p[0] for p in pairs], [p[1] for p in pairs])
+        canvas_store.append(canvas)
+        charts_layout.addWidget(canvas, stretch=1)
 
     # ------------------------------------------------------------------
     # Tabelle
@@ -546,6 +688,7 @@ class QTAnalysisView(QWidget):
                 row_total += val
                 table.setItem(r, c, QTableWidgetItem(f"{val:.2f}"))
             table.setItem(r, 1 + len(users), QTableWidgetItem(f"{row_total:.2f}"))
+        self._fit_table_to_contents(table)
 
     def _fill_single_table(self, table: QTableWidget, data: dict, key_header: str, val_header: str):
         table.clear()
@@ -556,3 +699,4 @@ class QTAnalysisView(QWidget):
         for r, (k, v) in enumerate(items):
             table.setItem(r, 0, QTableWidgetItem(k))
             table.setItem(r, 1, QTableWidgetItem(f"{v:.2f} €"))
+        self._fit_table_to_contents(table)

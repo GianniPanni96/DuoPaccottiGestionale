@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from App_context import AppContext
 
 _AMOUNT_RE = re.compile(r"^\d+([.,]\d{1,2})?$")
-_INCOME_BG = QColor("#d8f5de")     # verde chiaro per le righe entrata
+_INCOME_BG = QColor("#2f5437")     # verde chiaro per le righe entrata
 
 
 class QTImportPreviewDialog(QDialog):
