@@ -2,15 +2,18 @@
 
 Due livelli di lettura:
 - ``parse`` (interfaccia base): una spesa unica = il totale dello scontrino;
-- ``parse_receipt``: lettura 'a voci' (articoli + prezzi) per la view che
-  permette di assegnare ogni articolo a Cibo o Consumabili Casa e salvare
-  due spese separate.
+- ``parse_receipt``: lettura 'a voci' (articoli + prezzi + metodi di pagamento)
+  per la view che permette di assegnare ogni articolo a Cibo o Consumabili Casa
+  e di attribuire le quote pagate con metodi diversi a utenti diversi.
+
+Se il PDF non e' riconoscibile come scontrino, ``parse_receipt`` solleva
+``ReceiptParseError`` (la view lo mostra come popup di errore all'utente).
 """
 
 import re
 
 from ParserServices.base_pdf_parser import BasePdfParser
-from ParserServices.esselunga_receipt import EsselungaReceipt, ReceiptItem
+from ParserServices.esselunga_receipt import EsselungaReceipt, ReceiptItem, ReceiptPayment
 from ParserServices.parse_utils import to_float
 from ParserServices.parsed_movement import ParsedMovement
 
@@ -21,8 +24,19 @@ _DATE_SLASH_RE = re.compile(r"\b(\d{2})/(\d{2})/(\d{4})\b")
 
 # Riga articolo: "<descrizione> *a 1,98"  (il marcatore *a/*c/*d = aliquota IVA)
 _ARTICLE_RE = re.compile(r"^(?P<desc>.+?)\s+\*[a-zA-Z]\s+(?P<price>\d+,\d{2})$")
-# Riga sconto: "SCONTO 30% 0,69-S"
-_DISCOUNT_RE = re.compile(r"^(?P<desc>SCONTO.*?)\s+(?P<price>\d+,\d{2})-[A-Z]$", re.IGNORECASE)
+# Riga di storno (sconti, buoni spesa): "SCONTO 30% 0,69-S", "BUONO SPESA 6,00-S".
+# Qualsiasi descrizione seguita da "<prezzo>-<lettera>" a fine riga.
+_DISCOUNT_RE = re.compile(r"^(?P<desc>.+?)\s+(?P<price>\d+,\d{2})-[A-Z]$")
+# Riga pagamento: "PAGAMENTO BANCOMAT 110,32", "PAGAMENTO BUONO PASTO ELETTRON 56,00"
+_PAYMENT_RE = re.compile(r"^PAGAMENTO\s+(?P<method>.+?)\s+(?P<amount>\d[\d.]*,\d{2})$", re.IGNORECASE)
+# Marcatore buono pasto/ticket all'interno dell'etichetta del metodo.
+_MEAL_VOUCHER_RE = re.compile(r"buono\s+pasto|buoni\s+pasto|ticket", re.IGNORECASE)
+
+
+class ReceiptParseError(Exception):
+    """Il PDF non e' uno scontrino Esselunga analizzabile.
+
+    Trasporta un messaggio leggibile mostrato come popup di errore all'utente."""
 
 
 class EsselungaReceiptParser(BasePdfParser):
@@ -59,9 +73,15 @@ class EsselungaReceiptParser(BasePdfParser):
     def parse_receipt(self, pdf_path: str) -> EsselungaReceipt:
         lines = self.extract_lines(pdf_path)
         text = "\n".join(lines)
+        if not text.strip():
+            raise ReceiptParseError("Impossibile leggere il contenuto del PDF.")
+
         items = []
+        payments = []
         for line in lines:
             stripped = line.strip()
+            if not stripped:
+                continue
             article = _ARTICLE_RE.match(stripped)
             if article:
                 price = to_float(article.group("price"))
@@ -73,13 +93,35 @@ class EsselungaReceiptParser(BasePdfParser):
                 price = to_float(discount.group("price"))
                 if price is not None:
                     items.append(ReceiptItem(discount.group("desc").strip(), round(-price, 2)))
+                continue
+            payment = _PAYMENT_RE.match(stripped)
+            if payment:
+                amount = to_float(payment.group("amount"))
+                if amount is not None:
+                    method = payment.group("method").strip()
+                    payments.append(ReceiptPayment(
+                        method=method,
+                        amount=round(amount, 2),
+                        is_meal_voucher=bool(_MEAL_VOUCHER_RE.search(method)),
+                    ))
+
+        total = self._extract_total(text)
+        if not items and total is None:
+            raise ReceiptParseError(
+                "Il PDF selezionato non sembra uno scontrino Esselunga riconoscibile."
+            )
+        if not items:
+            raise ReceiptParseError(
+                "Nessun articolo riconosciuto nello scontrino: impossibile importarlo."
+            )
 
         return EsselungaReceipt(
             date=self._extract_date(text),
             items=items,
-            total=self._extract_total(text) or round(sum(i.price for i in items), 2),
+            total=total or round(sum(i.price for i in items), 2),
             iva=self._extract_iva(text) or 0.0,
             merchant=self.MERCHANT_NAME,
+            payments=payments,
         )
 
     # ------------------------------------------------------------------

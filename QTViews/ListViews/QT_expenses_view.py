@@ -118,6 +118,7 @@ class QTExpensesView(QTBaseListView):
 
     def _import_receipt(self):
         from PySide6.QtWidgets import QFileDialog
+        from ParserServices.esselunga_receipt_parser import ReceiptParseError
         from QTViews.Imports.QT_esselunga_import_dialog import QTEsselungaImportDialog
 
         owner_id = self._import_owner()
@@ -128,11 +129,11 @@ class QTExpensesView(QTBaseListView):
             return
         try:
             receipt = self.app_context.esselunga_parser.parse_receipt(path)
+        except ReceiptParseError as exc:
+            QMessageBox.critical(self, "Scontrino non riconosciuto", str(exc))
+            return
         except Exception as exc:
             QMessageBox.critical(self, "Errore di lettura", f"Impossibile leggere il PDF:\n{exc}")
-            return
-        if not receipt.items:
-            QMessageBox.information(self, "Import", "Nessun articolo riconosciuto nello scontrino.")
             return
         dialog = QTEsselungaImportDialog(
             app_context=self.app_context, owner_user_id=owner_id, receipt=receipt, parent=self,
