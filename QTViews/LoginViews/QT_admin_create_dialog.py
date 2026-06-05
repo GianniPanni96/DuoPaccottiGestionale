@@ -30,6 +30,7 @@ class QTAdminCreateDialog(QDialog):
         self.app_context = app_context
         self.admin_controller = app_context.admin_controller
         self._created = False
+        self.exit_requested = False
 
         self.setWindowTitle("Crea amministratore di sistema")
         self.setModal(True)
@@ -86,6 +87,12 @@ class QTAdminCreateDialog(QDialog):
         buttons.addStretch(1)
         root.addLayout(buttons)
 
+        exit_btn = QPushButton("Esci dall'app")
+        exit_btn.setFlat(True)
+        exit_btn.setStyleSheet("text-align: center; color: palette(mid);")
+        exit_btn.clicked.connect(self._exit_app)
+        root.addWidget(exit_btn)
+
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key_Escape:
             event.ignore()
@@ -94,6 +101,10 @@ class QTAdminCreateDialog(QDialog):
 
     def reject(self):
         return
+
+    def _exit_app(self):
+        self.exit_requested = True
+        self.done(QDialog.Rejected)
 
     def _on_create(self):
         pwd = self.password_edit.text()

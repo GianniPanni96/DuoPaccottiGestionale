@@ -17,6 +17,7 @@ from Controllers.Refund_controller import RefundController
 from Controllers.User_controller import UserController
 from Event_bus import EventBus
 from Model import DatabaseModel
+from OtherServices.Duplicate_detection_service import DuplicateDetectionService
 from OtherServices.Session_context import SessionContext
 from OtherServices.User_auth_service import UserAuthService
 from OtherServices.Visibility_service import VisibilityService
@@ -57,6 +58,9 @@ class AppContext:
         )
         self.expenses_query_service = ExpensesQueryService(self.db_model, self.visibility_service)
         self.incomes_query_service = IncomesQueryService(self.db_model, self.visibility_service)
+
+        # Rilevamento spese duplicate tra gli import (estratto conto / scontrino).
+        self.duplicate_detection_service = DuplicateDetectionService(self.expenses_query_service)
 
         # Autenticazione.
         self.user_auth_service = UserAuthService(

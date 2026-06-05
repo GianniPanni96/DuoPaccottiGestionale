@@ -1,6 +1,6 @@
 from copy import deepcopy
 
-from Gestionale_Enums import PaymentMethod, Visibility
+from Gestionale_Enums import PaymentMethod, SplitMode, Visibility
 
 
 # ----------------------------------------------------------------------
@@ -62,6 +62,11 @@ APP_SETTINGS_DEFAULT = {
         "default_visibility": {
             "value": Visibility.PUBBLICA.value,
             "description": "Visibilita' predefinita delle nuove spese/entrate.",
+        },
+        "default_split_mode": {
+            "value": SplitMode.EQUA.value,
+            "description": "Suddivisione predefinita delle spese importate "
+                           "(EQUA = quote eque tra tutti; PERSONALE = 100% a chi paga).",
         },
     },
     "refunds": {

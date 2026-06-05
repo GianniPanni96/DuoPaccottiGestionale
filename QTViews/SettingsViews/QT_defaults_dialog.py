@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from Gestionale_Enums import PaymentMethod, Visibility
+from Gestionale_Enums import PaymentMethod, SplitMode, Visibility
 
 if TYPE_CHECKING:
     from App_context import AppContext
@@ -52,6 +52,14 @@ class QTDefaultsDialog(QDialog):
         self.visibility_combo.setCurrentText(self.app_settings.get_default_visibility())
         form.addRow("Visibilita' predefinita:", self.visibility_combo)
 
+        self.split_combo = QComboBox()
+        self.split_combo.addItem("Equa tra tutti", SplitMode.EQUA.value)
+        self.split_combo.addItem("Personale (100% a chi paga)", SplitMode.PERSONALE.value)
+        idx = self.split_combo.findData(self.app_settings.get_default_split_mode())
+        if idx >= 0:
+            self.split_combo.setCurrentIndex(idx)
+        form.addRow("Suddivisione predefinita:", self.split_combo)
+
         buttons = QHBoxLayout()
         buttons.addStretch(1)
         cancel = QPushButton("Annulla")
@@ -67,4 +75,5 @@ class QTDefaultsDialog(QDialog):
         self.app_settings.set_default("default_iva", self.iva_combo.currentData())
         self.app_settings.set_default("default_payment_method", self.payment_combo.currentText())
         self.app_settings.set_default("default_visibility", self.visibility_combo.currentText())
+        self.app_settings.set_default("default_split_mode", self.split_combo.currentData())
         self.accept()

@@ -31,10 +31,12 @@ _PCT_TOLERANCE = 0.5  # punti percentuali
 
 class QTShareConfigDialog(QDialog):
     def __init__(self, app_context: "AppContext", total_amount: float,
-                 owner_user_id: int, existing: dict | None = None, parent=None):
+                 owner_user_id: int, existing: dict | None = None,
+                 fixed_advancer: int | None = None, parent=None):
         super().__init__(parent)
         self.total_amount = total_amount
         self.owner_user_id = owner_user_id
+        self.fixed_advancer = fixed_advancer
         self.config = existing
         self.users = app_context.users_query_service.retrieve_users_map_list()
         self._widgets = {}  # uid -> (check, pct_spin, amount_label)
@@ -52,12 +54,19 @@ class QTShareConfigDialog(QDialog):
         root.addWidget(QLabel(f"Importo totale: {self.total_amount:.2f} €"))
 
         adv_row = QHBoxLayout()
-        adv_row.addWidget(QLabel("Anticipata da:"))
+        adv_label = QLabel("Anticipata da:")
+        adv_row.addWidget(adv_label)
         self.advancer_combo = QComboBox()
         for user in self.users:
             self.advancer_combo.addItem(self._user_name(user), user[DBUsersColumns.ID.value])
         adv_row.addWidget(self.advancer_combo, stretch=1)
         root.addLayout(adv_row)
+        # Quando l'anticipatore e' fissato dall'esterno (es. pagatore del metodo
+        # di pagamento) il combo e' superfluo: lo nascondiamo per evitare un
+        # secondo selettore concorrente.
+        if self.fixed_advancer is not None:
+            adv_label.setVisible(False)
+            self.advancer_combo.setVisible(False)
 
         grid = QGridLayout()
         grid.addWidget(QLabel("Partecipa"), 0, 0)
@@ -99,7 +108,10 @@ class QTShareConfigDialog(QDialog):
         root.addLayout(btns)
 
     def _load(self, existing):
-        if existing:
+        if self.fixed_advancer is not None:
+            adv_idx = self.advancer_combo.findData(self.fixed_advancer)
+            shares = existing.get("shares", {}) if existing else {}
+        elif existing:
             adv_idx = self.advancer_combo.findData(existing.get("advancer"))
             shares = existing.get("shares", {})
         else:

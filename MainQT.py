@@ -36,7 +36,8 @@ def _ensure_admin_exists(app_context) -> bool:
 
     dialog = QTAdminCreateDialog(app_context=app_context)
     if dialog.exec() != QTAdminCreateDialog.Accepted or not dialog.created:
-        QMessageBox.critical(None, "Avvio interrotto", "Creazione amministratore annullata.")
+        if not dialog.exit_requested:
+            QMessageBox.critical(None, "Avvio interrotto", "Creazione amministratore annullata.")
         return False
     return True
 

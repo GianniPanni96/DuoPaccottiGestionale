@@ -14,7 +14,7 @@ import re
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QDate, Qt
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -41,7 +41,8 @@ if TYPE_CHECKING:
     from App_context import AppContext
 
 _AMOUNT_RE = re.compile(r"^\d+([.,]\d{1,2})?$")
-_INCOME_BG = QColor("#2f5437")     # verde chiaro per le righe entrata
+_INCOME_BG = QColor("#2f5437")     # verde scuro per le righe entrata
+_DUPLICATE_BG = QColor("#5a3a2a")  # ambra scuro per le righe probabilmente duplicate
 
 
 class QTImportPreviewDialog(QDialog):
@@ -61,6 +62,7 @@ class QTImportPreviewDialog(QDialog):
         self.expense_controller = app_context.expense_controller
         self.income_controller = app_context.income_controller
         self.app_settings = app_context.app_settings_manager
+        self.duplicate_detector = app_context.duplicate_detection_service
         self.users = app_context.users_query_service.retrieve_users_map_list()
 
         self._expense_categories = self._catalog("expense_categories")
@@ -98,9 +100,11 @@ class QTImportPreviewDialog(QDialog):
             self.user_combo.setCurrentIndex(idx)
         top.addWidget(self.user_combo)
         top.addStretch(1)
-        n_exp = sum(1 for m in self.movements if m.kind == "expense")
-        n_inc = len(self.movements) - n_exp
-        top.addWidget(QLabel(f"{n_exp} spese · {n_inc} entrate (in verde)"))
+        self._n_exp = sum(1 for m in self.movements if m.kind == "expense")
+        self._n_inc = len(self.movements) - self._n_exp
+        self.summary_label = QLabel()
+        top.addWidget(self.summary_label)
+        self._update_summary(0)
         root.addLayout(top)
 
         self.table = QTableWidget()
@@ -169,9 +173,15 @@ class QTImportPreviewDialog(QDialog):
                 placeholder.setFlags(placeholder.flags() & ~Qt.ItemIsEditable)
                 placeholder.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(r, self.COL_SHARE, placeholder)
-                self._tint_row(r)
+                self._tint_row(r, _INCOME_BG)
             else:
                 self.table.setCellWidget(r, self.COL_SHARE, self._share_button(r))
+
+        # Evidenzia le righe spesa che sembrano gia' presenti a sistema e
+        # riallinea l'evidenziazione quando cambia l'utente di riferimento
+        # (il match e' calcolato sulle spese del proprietario selezionato).
+        self._flag_duplicates()
+        self.user_combo.currentIndexChanged.connect(self._on_owner_changed)
 
     # ------------------------------------------------------------------
 
@@ -194,12 +204,77 @@ class QTImportPreviewDialog(QDialog):
         btn.clicked.connect(lambda _=False, r=row: self._configure_share(r))
         return btn
 
-    def _tint_row(self, row):
+    def _tint_row(self, row, color):
         for col in (self.COL_KIND, self.COL_DATE, self.COL_DESC,
                     self.COL_MERCHANT, self.COL_AMOUNT, self.COL_SHARE):
             item = self.table.item(row, col)
             if item is not None:
-                item.setBackground(_INCOME_BG)
+                item.setBackground(color)
+
+    def _clear_row_tint(self, row):
+        for col in (self.COL_KIND, self.COL_DATE, self.COL_DESC,
+                    self.COL_MERCHANT, self.COL_AMOUNT, self.COL_SHARE):
+            item = self.table.item(row, col)
+            if item is not None:
+                item.setBackground(QBrush())
+                item.setToolTip("")
+
+    def _update_summary(self, n_dup: int):
+        text = f"{self._n_exp} spese · {self._n_inc} entrate (in verde)"
+        if n_dup:
+            text += f" · {n_dup} possibili duplicati (in ambra, deselezionati)"
+        self.summary_label.setText(text)
+
+    def _on_owner_changed(self, _idx=None):
+        # Ripristina lo stato originale delle righe spesa e ri-valuta i
+        # duplicati rispetto al nuovo proprietario selezionato.
+        for r, mv in enumerate(self.movements):
+            if mv.kind != "expense":
+                continue
+            self._clear_row_tint(r)
+            check = self._check_boxes[r]
+            if check is not None:
+                check.setChecked(bool(mv.include))
+        self._flag_duplicates()
+
+    def _flag_duplicates(self):
+        owner = self.user_combo.currentData()
+        n_dup = 0
+        for r, mv in enumerate(self.movements):
+            if mv.kind != "expense":
+                continue
+            match = self.duplicate_detector.find_duplicate(
+                owner, mv.date, mv.amount,
+                merchant_hint=mv.merchant or mv.operation,
+            )
+            if not match:
+                continue
+            n_dup += 1
+            check = self._check_boxes[r]
+            if check is not None:
+                check.setChecked(False)
+            self._tint_row(r, _DUPLICATE_BG)
+            self._set_row_tooltip(r, self._duplicate_tooltip(match))
+        self._update_summary(n_dup)
+
+    def _set_row_tooltip(self, row, text):
+        for col in (self.COL_KIND, self.COL_DATE, self.COL_DESC,
+                    self.COL_MERCHANT, self.COL_AMOUNT, self.COL_SHARE):
+            item = self.table.item(row, col)
+            if item is not None:
+                item.setToolTip(text)
+
+    def _duplicate_tooltip(self, match) -> str:
+        existing_date = match.get("existing_date") or ""
+        day = QDate.fromString(str(existing_date)[:10], "yyyy-MM-dd")
+        when = day.toString("dd/MM/yyyy") if day.isValid() else existing_date
+        total = match.get("existing_total", 0.0)
+        base = (f"Probabile duplicato: a sistema risulta gia' una spesa del "
+                f"{when} da {total:.2f} €.")
+        if match.get("esselunga_hint"):
+            base += " Sembra l'addebito Esselunga gia' importato dallo scontrino."
+        base += " Riga deselezionata: riattivala col toggle per salvarla comunque."
+        return base
 
     def _set_all_checked(self, checked: bool):
         for check in self._check_boxes:

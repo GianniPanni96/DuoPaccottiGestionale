@@ -6,7 +6,11 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QMessageBox
 
-from Gestionale_Enums import DBExpensesColumns as E
+from Gestionale_Enums import (
+    DBExpensesColumns as E,
+    DBExpenseSharesColumns as S,
+    DBUsersColumns as U,
+)
 from QTViews.CustomWidgets.QT_dict_table_model import Column
 from QTViews.ListViews.QT_base_list_view import QTBaseListView
 
@@ -29,7 +33,7 @@ class QTExpensesView(QTBaseListView):
         Column("Esercente", E.MERCHANT.value),
         Column("Importo", "_amount", formatter=lambda v: f"{v:.2f} €", align=_RIGHT, sort_key=lambda v: v),
         Column("Metodo", E.PAYMENT_METHOD.value),
-        Column("Condivisa", "_shared_label"),
+        Column("A carico di", "_charge_label"),
         Column("Saldo", "_settled_label"),
         Column("Visibilità", E.VISIBILITY.value),
     )
@@ -39,8 +43,37 @@ class QTExpensesView(QTBaseListView):
         self.expense_analyzer_service = app_context.expense_analyzer_service
         self.expense_controller = app_context.expense_controller
         self.session_context = app_context.session_context
+        self.users_query_service = app_context.users_query_service
+        self.expense_shares_query_service = app_context.expense_shares_query_service
         self._catalogs_manager = app_context.catalogs_manager
         self._category_label_map = dict(self._catalogs_manager.get_section("expense_categories"))
+
+    def _user_name_map(self) -> dict:
+        return {
+            u[U.ID.value]: f"{u[U.FIRST_NAME.value]} {u[U.LAST_NAME.value]}"
+            for u in self.users_query_service.retrieve_users_map_list()
+        }
+
+    def _shares_by_expense(self) -> dict:
+        grouped = {}
+        for share in self.expense_shares_query_service.retrieve_all_shares():
+            grouped.setdefault(share.get(S.EXPENSE_ID.value), []).append(share)
+        return grouped
+
+    def _charge_label(self, expense, names, shares) -> str:
+        """'Mario 60% · Anna 40%' per le condivise; '{owner} 100%' altrimenti."""
+        if expense.get(E.IS_SHARED.value) and shares:
+            ordered = sorted(
+                shares, key=lambda s: s.get(S.PERCENTAGE.value) or 0.0, reverse=True
+            )
+            parts = [
+                f"{names.get(s.get(S.USER_ID.value), 'Utente')} "
+                f"{round((s.get(S.PERCENTAGE.value) or 0.0) * 100)}%"
+                for s in ordered
+            ]
+            return " · ".join(parts)
+        owner = names.get(expense.get(E.USER_ID.value), "Utente")
+        return f"{owner} 100%"
 
     def fetch_items(self, year):
         return self.expenses_query_service.retrieve_expenses_map_list(year=year)
@@ -49,6 +82,8 @@ class QTExpensesView(QTBaseListView):
         # Rilegge le etichette categoria a ogni reload, cosi' le modifiche dal
         # menu 'Categorie' sono visibili senza riavviare.
         self._category_label_map = dict(self._catalogs_manager.get_section("expense_categories"))
+        names = self._user_name_map()
+        shares_by_expense = self._shares_by_expense()
         rows = []
         for raw in items:
             e = dict(raw)
@@ -61,7 +96,9 @@ class QTExpensesView(QTBaseListView):
             except (TypeError, ValueError):
                 e["_amount"] = 0.0
             shared = bool(e.get(E.IS_SHARED.value))
-            e["_shared_label"] = "Condivisa" if shared else "—"
+            e["_charge_label"] = self._charge_label(
+                e, names, shares_by_expense.get(e.get(E.ID.value), [])
+            )
             if shared:
                 e["_settled_label"] = "Saldata" if e.get(E.IS_SETTLED.value) else "Da saldare"
             else:

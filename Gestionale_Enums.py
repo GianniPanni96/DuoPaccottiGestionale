@@ -40,6 +40,12 @@ class ExpenseSource(Enum):
     ESTRATTO_BANCA = "ESTRATTO_BANCA"
 
 
+class SplitMode(Enum):
+    """Suddivisione predefinita applicata alle spese importate."""
+    EQUA = "EQUA"            # quote eque tra tutti gli utenti del nucleo
+    PERSONALE = "PERSONALE"  # 100% a chi ha pagato
+
+
 class IncomeSource(Enum):
     MANUALE = "MANUALE"
     ESTRATTO_BANCA = "ESTRATTO_BANCA"

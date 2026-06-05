@@ -31,6 +31,12 @@ class AppSettingsManager(BaseJsonConfigManager):
     def get_default_visibility(self) -> str:
         return self._get_value("defaults", "default_visibility", "PUBBLICA")
 
+    SPLIT_MODES = ("EQUA", "PERSONALE")
+
+    def get_default_split_mode(self) -> str:
+        value = self._get_value("defaults", "default_split_mode", "EQUA").upper()
+        return value if value in self.SPLIT_MODES else "EQUA"
+
     def set_default(self, key: str, value: str):
         self._set_value("defaults", key, value)
 
